@@ -1,0 +1,938 @@
+---
+title: 'CaseStudy2: Employee Attrition Study'
+author: "YZ"
+date: "12/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Executive Summary
+
+We use the employee dataset to do an EDA first, then further modeling the attrition using a few different criteria, identifying factors that related to attrition. The top factors related to attrition I identified within this analysis are:
+Age/TotalWorkingYears
+MonthlyIncome/JobRole
+Overtime/DistancefromHome
+
+The top factors related to monthly incomes I identified within this analysis are:
+Job level
+Job role
+YearsatCompany/TotalWorkingYears
+
+There are a few learning about the dataset:
+It appears that sales has a higher attrition rate.
+Factors related to work-life balance appear important to attrition.
+No apparent gender differences are found in attrition and monthly incomes.
+
+To test the robustness of our understanding we are using our model to do prediction hope to validate it in those "Competition Set" too. First part is a classification problem which predict the employee attrition. The model we used for prediction is using Random Forest  and has a sensitivity of 84% and specificity of 64%.
+
+The Second part is a regression problem which predict the Monthly Incomes. The model we used for prediction is using an ensemble regression model and has a RMSE of 752.
+
+#Introduction
+
+This study is on behalf of DDSAnalytics which is specialized in talent management solution for Forture 100 companies. 
+
+Talent management is defined as the iterative process of developing and retaining employees. It may include workforce planning, employee training programs, identifying high-potential employees and reducing/preventing voluntary employee turnover (attrition). 
+
+To gain a competitive edge over its competition, we as in DDSAnalytics is using advance data science technology to help with talent management. The first application, identified by the excutive leadership team is on it with predicting employee turnover.
+
+The dataset has 36 explanatory variables describing rich information of employee and we are using it to predict the employee attrition and monthly incomes.
+
+#Load and Exploring Data
+
+##Loading libraries required and reading the data into R
+
+Loading R packages used besides base R.
+
+```{r message=FALSE}
+library(dplyr)
+library(here)
+library(ggplot2)
+library(tidyr)
+library(ggthemes)
+library(doBy)
+library(reshape)
+library(plotly)
+library(GGally)
+library(caret)
+library(e1071)
+library(class)
+library(usmap)
+library(magrittr)
+library(readr)
+library(readxl)
+library(gridExtra)
+library(forcats)
+library(DMwR)
+library(randomForest)
+library(h2o)
+```
+
+
+Below, I am reading the csv's as dataframes into R.
+
+```{r}
+case2 <- read_csv("CaseStudy2-data.csv")
+
+# initialize dataframes
+case2 <- data.frame(case2)
+
+```
+
+##Exploring Data Size and Structure
+
+```{r}
+#data dimensions
+dim(case2)
+
+str(case2[,c(1:10,36)])
+
+# Print out a summary of the dataset
+case2 %>% glimpse()
+```
+
+In case2 we have 870 data points and 36 columns of variables. The column "Attrition" and "MonthlyIncome" are the columns that are not provided in the test dataset "case2_attr" and "case2_sala" seperately.
+
+##Examine whether there are missing values
+
+```{r}
+#Check NA values
+print(colSums(is.na(case2)))
+```
+
+The results show that there's no missing values within this data. Super!
+
+# Exploring some of the most important variables
+
+## The response variable: Attrition
+
+Data overview in Labels
+```{r}
+##In numbers
+g1 <- case2 %>% group_by(Attrition) %>% summarise(Count=n()) %>% ggplot(aes(x=Attrition, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") +
+labs(title="Employee Attrition (Amount)", x="Employee Attrition",y="Count")
+
+##In percentage
+g2 <- case2 %>% group_by(Attrition) %>% summarise(Count=n()) %>% mutate(pct=round(prop.table(Count),2) * 100) %>% ggplot(aes(x=Attrition, y=pct)) + geom_bar(stat="identity", fill="orange", color="grey40") +
+labs(title="Employee Attrition (Amount)", x="Employee Attrition",y="Count") 
+
+grid.arrange(g1,g2,ncol = 2, nrow = 1)
+#print(arrangeGrob(g1,g2,ncol = 2, nrow = 1))
+```
+
+There are 84% "No" and 16% "Yes", so we are having dominately "No" in our labeling for later modeling, we may have to deal with this imbalance problem in modeling
+
+We are exploring Attrition with some other key variables
+
+Attrition grouped by Gender
+```{r}
+
+g3 <- case2 %>% select(Gender, Age, Attrition) %>% filter(Gender == 'Male') %>%  group_by(Attrition) %>% summarise(Count=n()) %>% ggplot(aes(x=Attrition, y=Count)) + geom_bar(stat="identity", fill="#819FF7", color="grey40") +
+    geom_label(aes(label=n, fill = Gender), colour = "white", fontface = "italic") +
+  labs(title="Male Employee Attrition (Amount)", x="Employee Attrition",y="Count") + geom_text(aes(x=Attrition, y=0.01, label= Count),vjust=-2)
+
+g4 <- case2 %>% select(Gender, Age, Attrition) %>% filter(Gender == 'Female') %>%  group_by(Attrition) %>% summarise(Count=n()) %>% ggplot(aes(x=Attrition, y=Count)) + geom_bar(stat="identity", fill="#F781F3", color="grey40") +
+    geom_label(aes(label=n, fill = Gender), colour = "white", fontface = "italic") +
+  labs(title="Female Employee Attrition (Amount)", x="Employee Attrition",y="Count") + geom_text(aes(x=Attrition, y=0.01, label= Count),vjust=-2)
+
+#grid.arrange(g3,g4,ncol = 2, nrow = 1)
+
+g5 <- case2 %>% select(Gender, Attrition) %>% group_by(Gender, Attrition) %>% summarize(n=n()) %>% ggplot(aes(x=Attrition, y=n, fill=Gender, color=Gender)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA")) + scale_color_manual(values=c("#FE2EF7", "#5858FA")) + facet_wrap(~Gender) +
+    geom_label(aes(label=n, fill = Gender), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Amount)", x="Employee Attrition",y="Percentage") + geom_text(aes(x=Attrition, y=0.01, label= n),vjust=-2)
+
+g5
+
+g6 <- case2 %>% select(Gender, Attrition) %>% group_by(Gender, Attrition) %>% summarize(n=n()) %>% mutate(pct=round(prop.table(n),2) * 100) %>% ggplot(aes(x=Attrition, y=pct, fill=Gender, color=Gender)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA")) + scale_color_manual(values=c("#FE2EF7", "#5858FA")) + facet_wrap(~Gender) +
+    geom_label(aes(label=pct, fill = Gender), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Percent)", x="Employee Attrition",y="Percentage") + geom_text(aes(x=Attrition, y=0.01, label= pct),vjust=-2)
+
+g6
+
+```
+
+We don't identify big gender differences regarding Attrition rate.
+
+\newline
+Attrition grouped by Age
+```{r}
+g7 <- case2 %>% ggplot(aes(x=Age, fill=Attrition)) + geom_density(alpha = 0.7) + scale_color_manual(values=c("#58FA58", "#FA5858")) + scale_fill_manual(values=c("#58FA58", "#FA5858")) + labs(title="Age comparison colored by Attrition")
+
+g7
+```
+
+The averaged employee age of Attrition of "Yes" is smaller than with "No".
+
+
+\newline
+Attrition grouped by MonthlyIncome
+```{r}
+g8<- case2 %>% select(Attrition, PercentSalaryHike, MonthlyIncome) %>% 
+ggplot(aes(x=PercentSalaryHike, y=MonthlyIncome)) + geom_jitter(aes(col=Attrition), alpha=0.5) + scale_color_manual(values=c("#58FA58", "#FA5858")) +
+    labs(title="MonthlyIncome vs PercentSalaryHike colored by Attrition")
+
+g9<-case2 %>% ggplot(aes(x=MonthlyIncome, fill=Attrition)) + geom_density(alpha = 0.7) + scale_color_manual(values=c("#58FA58", "#FA5858")) + scale_fill_manual(values=c("#58FA58", "#FA5858")) + labs(title="MonthlyIncome comparison colored by Attrition")
+
+grid.arrange(g8,g9,ncol = 2, nrow = 1)
+
+```
+
+People did attrition has an average lower monthlyincome than the ones stay in the company.
+
+\newline
+Attrition grouped by MonthlyRate, DailyRate, HourlyRate
+
+```{r}
+g10<-case2 %>% ggplot(aes(x=MonthlyRate, fill=Attrition)) + geom_density(alpha = 0.7) + scale_color_manual(values=c("#58FA58", "#FA5858"))  + scale_fill_manual(values=c("#58FA58", "#FA5858"))+ labs(title="MonthlyRate comparison colored by Attrition")
+
+g11<-case2 %>% ggplot(aes(x=DailyRate, fill=Attrition)) + geom_density(alpha = 0.7) + scale_color_manual(values=c("#58FA58", "#FA5858"))  + scale_fill_manual(values=c("#58FA58", "#FA5858"))+ labs(title="DailyRate comparison colored by Attrition")
+
+g12<-case2 %>% ggplot(aes(x=HourlyRate, fill=Attrition)) + geom_density(alpha = 0.7) + scale_color_manual(values=c("#58FA58", "#FA5858"))  + scale_fill_manual(values=c("#58FA58", "#FA5858"))+ labs(title="HourlyRate comparison colored by Attrition")
+
+g14<-case2 %>% ggplot(aes(x=JobLevel, fill=Attrition)) + geom_density(alpha = 0.7) + scale_color_manual(values=c("#58FA58", "#FA5858"))  + scale_fill_manual(values=c("#58FA58", "#FA5858"))+ labs(title="JobLevel comparison colored by Attrition")
+
+grid.arrange(g10,g11,g12,g14,ncol = 2, nrow = 2)
+
+```
+
+We identified that it shows lower MonthlyRate/DailyRate for attrition "Yes", not clear in HourlyRate. We observed that attrition "Yes" has lower Joblevel in general.
+
+
+
+\newline
+Attrition grouped by MonthlyIncome together with JobSatisfaction
+
+```{r}
+case2$JobSatisfaction <- as.factor(case2$JobSatisfaction)
+
+
+g15 <- case2 %>% select(JobSatisfaction, MonthlyIncome, Attrition) %>% group_by(JobSatisfaction, Attrition) %>% summarize(med=median(MonthlyIncome)) %>% ggplot(aes(x=JobSatisfaction, y=med, color=Attrition)) + geom_point(size=3) + facet_wrap(~Attrition) + labs(title="MonthlyIncome Median colored by Attrition", y="Median Income", x="Level of Job Satisfaction") + geom_segment(aes(x=JobSatisfaction,xend=JobSatisfaction, y=0, yend=med)) +  scale_color_manual(values=c("#58FA58", "#FA5858")) + scale_fill_manual(values=c("#58FA58", "#FA5858")) + geom_text(aes(x=JobSatisfaction, y=0.01, label= med),vjust=-2)
+
+g15
+```
+In the group of Attrition people has an apparent lower median Income with the people who do not quit across job satisfaction levels.
+
+Attrition grouped by Overtime
+
+```{r}
+g16 <- case2 %>% select(OverTime, Attrition) %>% group_by(OverTime, Attrition) %>% summarize(n=n()) %>% ggplot(aes(x=Attrition, y=n, fill=OverTime, color=OverTime)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA")) + scale_color_manual(values=c("#FE2EF7", "#5858FA")) + facet_wrap(~OverTime) +
+    geom_label(aes(label=n, fill = OverTime), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Amount)", x="Employee Attrition",y="Percentage") 
+
+g16
+
+g17 <- case2 %>% select(OverTime, Attrition) %>% group_by(OverTime, Attrition) %>% summarize(n=n()) %>% mutate(pct=round(prop.table(n),2) * 100) %>% ggplot(aes(x=Attrition, y=pct, fill=OverTime, color=OverTime)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA")) + scale_color_manual(values=c("#FE2EF7", "#5858FA")) + facet_wrap(~OverTime) +
+  geom_label(aes(label=pct, fill = OverTime), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Amount)", x="Employee Attrition",y="Percentage") 
+
+g17
+
+```
+
+People that has work overtime has a high probability of leaving the company.
+
+Attrition grouped by Department
+```{r}
+g18 <- case2 %>% select(Department, Attrition) %>% group_by(Department, Attrition) %>% summarize(n=n()) %>% ggplot(aes(x=Attrition, y=n, fill=Department, color=Department)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA","#FE2E2E")) + scale_color_manual(values=c("#FE2EF7", "#5858FA","#FE2E2E")) + facet_wrap(~Department) +
+  geom_label(aes(label=n, fill = Department), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Amount) by Department", x="Employee Attrition",y="Amount") 
+
+g18
+
+g19 <- case2 %>% select(Department, Attrition) %>% group_by(Department, Attrition) %>% summarize(n=n()) %>% mutate(pct=round(prop.table(n),2) * 100) %>%
+  ggplot(aes(x=Attrition, y=pct, fill=Department, color=Department)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA","#FE2E2E")) + scale_color_manual(values=c("#FE2EF7", "#5858FA","#FE2E2E")) + facet_wrap(~Department) +
+  geom_label(aes(label=pct, fill = Department), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Amount) by Department", x="Employee Attrition",y="Percentage")
+
+g19
+```
+
+The Sales department has a higher probability of leaving the company.
+
+Attrition grouped by WorkLifeBalance
+```{r}
+case2$WorkLifeBalance <- as.factor(case2$WorkLifeBalance)
+
+g20 <- case2 %>% select(WorkLifeBalance, Attrition) %>% group_by(WorkLifeBalance, Attrition) %>% summarize(count=n()) %>% ggplot(aes(x=fct_reorder(Attrition, -count), y=count, fill=WorkLifeBalance)) + geom_bar(stat='identity') + facet_wrap(~WorkLifeBalance) + scale_fill_manual(values=c("#F5A9F2", "#5882FA", "#FE2E2E","orange")) +  geom_label(aes(label=count, fill = WorkLifeBalance), colour = "white", fontface = "italic") +  labs(title="Employee Attrition (Amount) by Work Life Balance", x="Work and Life Balance", y="Number of Employees")
+
+g20
+
+g21 <- case2 %>% select(WorkLifeBalance, Attrition) %>% group_by(WorkLifeBalance, Attrition) %>% summarize(count=n()) %>% mutate(pct=round(prop.table(count),2) * 100) %>% ggplot(aes(x=fct_reorder(Attrition, -count), y=pct, fill=WorkLifeBalance)) + geom_bar(stat='identity') + facet_wrap(~WorkLifeBalance) + scale_fill_manual(values=c("#F5A9F2", "#5882FA", "#FE2E2E","orange")) + geom_label(aes(label=pct, fill = WorkLifeBalance), colour = "white", fontface = "italic") + labs(title="Employee Attrition (Percentage) by Work Life Balance", x="Work and Life Balance", y="Number of Employees")
+
+g21
+```
+
+The worse the work life balance group has a highest ratio of people that are leaving.
+
+Attrition grouped by BusinessTravel frequency
+```{r}
+
+g22 <- case2 %>% select(BusinessTravel, Attrition) %>% group_by(BusinessTravel, Attrition) %>% summarize(n=n()) %>% ggplot(aes(x=Attrition, y=n, fill=BusinessTravel, color=BusinessTravel)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA","#FE2E2E")) + scale_color_manual(values=c("#FE2EF7", "#5858FA","#FE2E2E")) + facet_wrap(~BusinessTravel) +
+  geom_label(aes(label=n, fill = BusinessTravel), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Amount) by BusinessTravel", x="Employee Attrition",y="Amount")
+
+g22
+
+g23 <- case2 %>% select(BusinessTravel, Attrition) %>% group_by(BusinessTravel, Attrition) %>% summarize(n=n()) %>% mutate(pct=round(prop.table(n),2) * 100) %>%
+  ggplot(aes(x=Attrition, y=pct, fill=BusinessTravel, color=BusinessTravel)) + geom_bar(stat="identity", color="grey40") + scale_fill_manual(values=c("#F5A9F2", "#5882FA","#FE2E2E")) + scale_color_manual(values=c("#FE2EF7", "#5858FA","#FE2E2E")) + facet_wrap(~BusinessTravel) +
+  geom_label(aes(label=pct, fill = BusinessTravel), colour = "white", fontface = "italic") +
+    labs(title="Employee Attrition (Percentage) by BusinessTravel", x="Employee Attrition",y="Percentage") 
+
+g23
+
+```
+
+The group of Travel_Frequently has a higher probability of leaving the company.
+
+Attrition grouped by YearsatCompanies, etc
+```{r}
+g24 <- case2 %>% select(YearsAtCompany, YearsSinceLastPromotion,Attrition) %>%
+ggplot(aes(x=YearsAtCompany, y=YearsSinceLastPromotion, colour = Attrition))+ geom_point()  + geom_smooth(method="loess") + scale_color_manual(values=c("#FE2EF7", "#5858FA")) +
+    labs(title="Employee Attrition", x="YearsAtCompany",y="YearsSinceLastPromotion") 
+
+g24
+```
+The different fitting show that people stay longer in company without promotion will likely to quit.
+
+
+
+## The response variable: MonthlyIncome
+
+Remove the variables with no valid information
+```{r}
+case2_use <- case2
+
+# Delete unecessary columns
+cols <- c("ID","Over18", "EmployeeNumber", "EmployeeCount", "StandardHours")
+
+case2_use[cols] <- NULL
+```
+Correlation Matrix
+```{r}
+numericVars <- which(sapply(case2_use, is.numeric)) #index vector numeric variables
+numericVarNames <- names(numericVars) #saving names vector for use later on
+cat('There are', length(numericVars), 'numeric variables')
+
+case2_numVar <- case2_use[, numericVars]
+cor_numVar <- cor(case2_numVar, use="pairwise.complete.obs") #correlations of all numeric variables
+
+#sort on decreasing correlations with MonthlyIncome
+cor_sorted <- as.matrix(sort(cor_numVar[,'MonthlyIncome'], decreasing = TRUE))
+ #select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.1)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+#corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+```
+The correlation plot identified several parameters correlate higher with monthly incomes:
+-JobLevel
+-TotalWorkingYears
+-YearsInCompany
+-Age
+
+
+\newline
+Plot High correlated variables: 
+```{r}
+#Total working years
+g27 <- case2 %>% select(TotalWorkingYears, MonthlyIncome) %>%
+ggplot(aes(x=TotalWorkingYears, y=MonthlyIncome)) + geom_point(colour = "#FA5858", alpha=1/2) + geom_smooth(method="loess",color="#EE4037")
+
+g28 <- case2 %>% select(YearsAtCompany, MonthlyIncome) %>%
+ggplot(aes(x=YearsAtCompany, y=MonthlyIncome)) + geom_point(colour = "#FA5858", alpha=1/2) + geom_smooth(method="loess",color="#EE4037")
+
+g29 <- case2 %>% select(Age, MonthlyIncome) %>%
+ggplot(aes(x=Age, y=MonthlyIncome)) + geom_point(colour = "#FA5858", alpha=1/2) + geom_smooth(method="loess",color="#EE4037")
+
+g30 <- case2 %>% select(JobLevel, MonthlyIncome) %>%
+ggplot(aes(x=JobLevel, y=MonthlyIncome)) + geom_point(colour = "#FA5858", alpha=1/2) + geom_smooth(method="loess",color="#EE4037")
+
+g31 <- case2 %>% select(YearsAtCompany, YearsInCurrentRole,YearsSinceLastPromotion,YearsWithCurrManager) %>% ggpairs()
+
+g27
+g28
+g29
+g30
+g31
+```
+\newline
+Investigate Monthly Income by Gender
+```{r}
+g32 <- case2 %>% group_by(Gender) %>% ggplot(aes(x=Gender, y=MonthlyIncome,fill=Gender)) + geom_boxplot() + scale_fill_manual(values=c("#F5A9F2", "#5882FA","#FE2E2E")) + scale_color_manual(values=c("#FE2EF7", "#5858FA","#FE2E2E"))  + 
+labs(title="MonthlyIncome by Gender")
+g32
+```
+
+\newline
+Investigate Monthly Income by Gender
+```{r}
+g33 <- case2 %>% group_by(Department) %>% ggplot(aes(x=Department, y=MonthlyIncome,fill=Department)) + geom_boxplot() + scale_fill_manual(values=c("#F5A9F2", "#5882FA","#FE2E2E")) + scale_color_manual(values=c("#FE2EF7", "#5858FA","#FE2E2E")) +
+labs(title="MonthlyIncome by Department")
+g33
+```
+
+
+#Modeling
+
+##First I removed several variables that are not informative 
+```{r}
+case2_use <- case2
+# Delete unecessary columns
+cols <- c("Over18", "EmployeeNumber", "EmployeeCount","ID","StandardHours")
+
+case2_use[cols] <- NULL
+```
+
+Split the data
+```{r}
+set.seed(1000)
+# Splitting our data
+trainIndex <- createDataPartition(case2_use$Attrition, p=0.7, 
+                                 list=FALSE, times=1)
+
+train_case2 <- case2_use[trainIndex,]
+valid_case2 <- case2_use[-trainIndex,]
+
+train_case2_label <- case2_use[trainIndex,]$Attrition
+valid_case2_label <- case2_use[-trainIndex,]$Attrition
+
+head(train_case2)
+head(valid_case2)
+
+```
+
+Use naive bayes
+```{r}
+model = naiveBayes(train_case2[,-c(2)],as.factor(train_case2$Attrition), laplace = 0)
+Table_nb <- table(predict(model,valid_case2[,-c(2)]),valid_case2$Attrition)
+CM_nb = confusionMatrix(Table_nb )
+CM_nb
+```
+
+
+##Many Modeling approaches doesn't take category variables so we picked the variables that are numerical
+```{r}
+numeric=case2_use %>% dplyr::select(Age,DailyRate,DistanceFromHome,HourlyRate,MonthlyRate,MonthlyIncome,NumCompaniesWorked,PercentSalaryHike,TrainingTimesLastYear,YearsAtCompany,YearsInCurrentRole,YearsSinceLastPromotion,YearsWithCurrManager,TotalWorkingYears)
+
+#scale the data:
+num=list(names(numeric))
+case2_use_num=case2_use[,names(case2_use) %in% num[[1]]]
+
+```
+
+Split the data
+```{r}
+set.seed(1000)
+# Splitting our data
+trainIndex <- createDataPartition(case2_use$Attrition, p=0.7, 
+                                 list=FALSE, times=1)
+
+train_case2 <- case2_use_num[trainIndex,]
+valid_case2 <- case2_use_num[-trainIndex,]
+
+train_case2_label <- case2_use[trainIndex,]$Attrition
+valid_case2_label <- case2_use[-trainIndex,]$Attrition
+
+
+
+```
+
+Use naive bayes
+```{r}
+model = naiveBayes(train_case2,as.factor(train_case2_label), laplace = 0)
+Table_nb <- table(predict(model,valid_case2),valid_case2_label)
+CM_nb = confusionMatrix(Table_nb )
+CM_nb
+```
+The results from the NB method is not too bad:
+We get 0.86 for Sensitivity and 45 for Specificity.
+
+
+Use KNN
+```{r}
+model_knn = knn(train_case2,valid_case2,train_case2_label, prob = FALSE, k = 3)
+table(model_knn,valid_case2_label)
+CM_knn = confusionMatrix(table(model_knn,valid_case2_label))
+CM_knn
+```
+The KNN method give us really high 0.95 for Sensitivity but really low 0.12 for Specificity, this is unacceptable.
+
+##Transfer the data: We convert category variables to ordinal variables
+We found that some of the category variables can be converted to ordinal variables, it will add more variables for the fitting.
+
+```{r}
+numericandordinal=case2_use %>% dplyr::select(Age,DailyRate,DistanceFromHome,HourlyRate,MonthlyRate,MonthlyIncome,NumCompaniesWorked,PercentSalaryHike,TrainingTimesLastYear,YearsAtCompany,YearsInCurrentRole,YearsSinceLastPromotion,YearsWithCurrManager,TotalWorkingYears,BusinessTravel,OverTime,EnvironmentSatisfaction,Education,JobInvolvement,JobLevel,PerformanceRating,RelationshipSatisfaction,StockOptionLevel)
+
+#scale the data:
+num2=list(names(numericandordinal))
+case2_use_numadd=case2_use[,names(case2_use) %in% num2[[1]]]
+
+case2_use_numadd <- case2_use_numadd %>% mutate(BusinessTravel=factor(BusinessTravel)) %>% mutate(BusinessTravel=fct_recode(BusinessTravel,"1"="Travel_Frequently","2"="Travel_Rarely","3"="Non-Travel"))
+case2_use_numadd <- case2_use_numadd %>% mutate(OverTime=factor(OverTime)) %>% mutate(OverTime=fct_recode(OverTime,"0"="No","1"="Yes"))
+case2_use_numadd <- case2_use_numadd %>% mutate(EnvironmentSatisfaction=factor(EnvironmentSatisfaction)) %>% mutate(EnvironmentSatisfaction=fct_recode(EnvironmentSatisfaction,"1"="Low","2"="Medium","3"="High","4"="Very High"))
+
+cols <- c("Education", "JobInvolvement", "JobLevel","PerformanceRating","RelationshipSatisfaction","StockOptionLevel")
+case2_use_numadd[cols] <- lapply(case2_use_numadd[cols], factor)
+
+#str(case2_use_numadd)
+
+```
+
+
+Split the data
+```{r}
+set.seed(1000)
+# Splitting our data
+trainIndex <- createDataPartition(case2_use$Attrition, p=0.7, 
+                                 list=FALSE, times=1)
+
+train_case2 <- case2_use_numadd[trainIndex,]
+valid_case2 <- case2_use_numadd[-trainIndex,]
+
+train_case2_label <- case2_use[trainIndex,]$Attrition
+valid_case2_label <- case2_use[-trainIndex,]$Attrition
+
+
+```
+
+Use naive bayes
+```{r}
+model = naiveBayes(train_case2,as.factor(train_case2_label), laplace = 0)
+Table_nb <- table(predict(model,valid_case2),valid_case2_label)
+CM_nb = confusionMatrix(Table_nb )
+CM_nb
+```
+We get increased 0.91 for Sensitivity and 0.40 for Specificity, this is an improve from previously.
+
+
+```{r}
+train_case2_add <- train_case2
+train_case2_add$Attrition <- train_case2_label
+valid_case2_add <- valid_case2
+valid_case2_add$Attrition <- valid_case2_label
+
+train_case2_add  <- train_case2_add  %>% mutate(Attrition=factor(Attrition)) %>% mutate(Attrition=fct_recode(Attrition,"0"="No","1"="Yes"))
+valid_case2_add  <- valid_case2_add  %>% mutate(Attrition=factor(Attrition)) %>% mutate(Attrition=fct_recode(Attrition,"0"="No","1"="Yes"))
+```
+
+Use KNN-cat
+```{r}
+library(knncat)
+model_knncat = knncat(train_case2_add,classcol = 24)
+knncat_pred <- predict(model_knncat, train_case2_add, train.classcol = 24, valid_case2_add, newdata.classcol = 24)
+CM_knncat = confusionMatrix(table(knncat_pred,valid_case2_add[,24]))
+CM_knncat
+```
+The KNN get improved from original which has 0.17 for Specificity.
+
+Use Random Forest
+```{r}
+## Classification Method 4: RandomForest
+model_rf = randomForest(train_case2,as.factor(train_case2_label),ntree=500)
+CM_rf = confusionMatrix(table(predict(model_rf,valid_case2),valid_case2_label))
+CM_rf
+
+## But random forest can provide with feature importance
+varImpPlot(model_rf)
+```
+The specificity is still low in random forest. But we can reference to the feature importance map.
+
+```{r}
+# Delete lease important columns
+cols <- c("PerformanceRating","BusinessTravel","YearsSinceLastPromotion","Education","TrainingTimesLastYear")
+
+train_case2[cols] <- NULL
+valid_case2[cols] <- NULL
+
+model = naiveBayes(train_case2,as.factor(train_case2_label), laplace = 0)
+Table_nb <- table(predict(model,valid_case2),valid_case2_label)
+CM_nb = confusionMatrix(Table_nb )
+CM_nb
+
+```
+The specificity has improved from 0.50 to 0.61.
+
+What if we just go ahead and use all variables switching to numerical, will that help?
+```{r}
+##Convert the category variables to factors in numerical levels
+
+temp <- case2_use %>% mutate(Gender=factor(Gender)) %>% mutate(Gender=fct_recode(Gender,"0"="Male","1"="Female"))
+temp <- temp %>% mutate(BusinessTravel=factor(BusinessTravel)) %>% mutate(BusinessTravel=fct_recode(BusinessTravel,"1"="Travel_Frequently","2"="Travel_Rarely","3"="Non-Travel"))
+temp <- temp %>% mutate(Attrition=factor(Attrition)) %>% mutate(Attrition=fct_recode(Attrition,"0"="No","1"="Yes"))
+temp <- temp %>% mutate(MaritalStatus=factor(MaritalStatus)) %>% mutate(MaritalStatus=fct_recode(MaritalStatus,"0"="Married","1"="Single","2"="Divorced"))
+temp <- temp %>% mutate(OverTime=factor(OverTime)) %>% mutate(OverTime=fct_recode(OverTime,"0"="No","1"="Yes"))
+temp <- temp %>% mutate(Department=factor(Department)) %>% mutate(Department=fct_recode(Department,"0"="Sales","1"="Research & Development","2"="Human Resources"))
+temp <- temp %>% mutate(JobRole=factor(JobRole)) %>% mutate(JobRole=fct_recode(JobRole,"0"="Healthcare Representative","1"="Sales Representative","2"="Research Scientist","3"="Manufacturing Director","4"="Sales Executive","5"="Human Resources","6"="Laboratory Technician","7"="Research Director","8"="Manager"))
+temp <- temp %>% mutate(EducationField=factor(EducationField)) %>% mutate(EducationField=fct_recode(EducationField,"0"="Life Sciences","1"="Medical","2"="Technical Degree","3"="Marketing","4"="Human Resources", "5"="Other"))
+temp <- temp %>% mutate(EnvironmentSatisfaction=factor(EnvironmentSatisfaction)) %>% mutate(EnvironmentSatisfaction=fct_recode(EnvironmentSatisfaction,"1"="Low","2"="Medium","3"="High","4"="Very High"))
+case2_use_cat<-temp
+
+cols <- c("Education", "JobInvolvement", "JobLevel","PerformanceRating","RelationshipSatisfaction","StockOptionLevel")
+case2_use_cat[cols] <- lapply(case2_use_cat[cols], factor)
+
+```
+
+Split the data
+```{r}
+set.seed(1000)
+# Splitting our data
+trainIndex <- createDataPartition(case2_use_cat$Attrition, p=0.7, 
+                                 list=FALSE, times=1)
+
+train_case2 <- case2_use_cat[trainIndex,]
+valid_case2 <- case2_use_cat[-trainIndex,]
+
+
+```
+
+Use naive bayes
+```{r}
+cols <- c("PerformanceRating","BusinessTravel","YearsSinceLastPromotion","Education","TrainingTimesLastYear","JobLevel")
+
+train_case2[cols] <- NULL
+valid_case2[cols] <- NULL
+
+
+model = naiveBayes(train_case2[,-c(2)],as.factor(train_case2$Attrition), laplace = 0)
+Table_nb <- table(predict(model,valid_case2[,-c(2)]),valid_case2$Attrition)
+CM_nb = confusionMatrix(Table_nb )
+CM_nb
+```
+The results does show a improved Specificity 0.64 but decreased Sensitivity 0.84.
+
+Use Random Forest
+```{r}
+## Classification Method 4: RandomForest
+model_rf = randomForest(train_case2[,-c(2)],as.factor(train_case2$Attrition),ntree=500)
+CM_rf = confusionMatrix(table(predict(model_rf,valid_case2[,-c(2)]),valid_case2$Attrition))
+CM_rf
+
+## But random forest can provide with feature importance
+varImpPlot(model_rf)
+
+imp_RF <- importance(model_rf)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+
+```
+Random forest doesn't give us an improved results. It shows very low Specificity.
+
+
+As we stated earlier in the EDA, the labels are imbalanced, we can balance the data and check if it can improve.
+we use SMOTE to deal with imbalance problem.  
+```{r}
+
+p=prop.table(table(train_case2$Attrition))
+cat("Before SMOTE the propotions are:"); print(p,row.names=FALSE)
+set.seed(1000)
+library(DMwR)
+smote_train=SMOTE(Attrition ~ .,train_case2)
+q=prop.table(table(smote_train$Attrition))
+cat("After SMOTE the propotions are:"); print(q,row.names=FALSE)
+```
+With SMOTE we desample the Attrition Yes group from 84% to 57%. Now our data is more balanced.
+
+
+```{r}
+model = naiveBayes(smote_train[,-c(2)],as.factor(smote_train$Attrition), laplace = 0)
+Table_nb_SMOTE <- table(predict(model,valid_case2[,-c(2)]),valid_case2$Attrition)
+CM_nb_SMOTE = confusionMatrix(Table_nb_SMOTE )
+CM_nb_SMOTE
+```
+
+
+```{r}
+model_rf_SMOTE = randomForest(smote_train[,-c(2)],as.factor(smote_train$Attrition),ntree=500)
+CM_rf_SMOTE = confusionMatrix(table(predict(model_rf_SMOTE,valid_case2[,-c(2)]),valid_case2$Attrition))
+CM_rf_SMOTE
+
+## But random forest can provide with feature importance
+varImpPlot(model_rf_SMOTE)
+
+imp_RF <- importance(model_rf_SMOTE)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+
+```
+
+
+```{r}
+#cols <- c("Gender","Department","PerformanceRating","BusinessTravel")
+cols <- c("RelationshipSatisfaction","EnvironmentSatisfaction")
+smote_train[cols] <- NULL
+valid_case2[cols] <- NULL
+
+model_rf_SMOTE = randomForest(smote_train[,-c(2)],as.factor(smote_train$Attrition),ntree=500)
+CM_rf_SMOTE = confusionMatrix(table(predict(model_rf_SMOTE,valid_case2[,-c(2)]),valid_case2$Attrition))
+CM_rf_SMOTE
+
+imp_RF <- importance(model_rf_SMOTE)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+```
+
+
+
+
+## Fit MonthlyIncome
+
+
+```{r}
+set.seed(1000)
+TrainObs = sample(seq(1,dim(case2_use_num)[1]),round(.7*dim(case2_use_num)[1]),replace = FALSE)
+regresTrain = case2_use_num[TrainObs,]
+#regresTrain
+regresTest = case2_use_num[-TrainObs,]
+#regresTest
+Model1_fit = lm(MonthlyIncome~., data = regresTrain)
+
+summary(Model1_fit)
+confint(Model1_fit)
+
+Model1_Preds = predict(Model1_fit, newdata = regresTest)
+
+#MSPE Calculation
+MSPE = mean((regresTest$MonthlyIncome - Model1_Preds)^2)
+MSPE
+
+hist(Model1_fit$residuals, col = "blue", main = "Model1: Histogram of Residuals")
+plot(Model1_fit$fitted.values,Model1_fit$residuals, main = "Model1: Plot of Residuals v. Fitted Values")
+
+RSS_m1 <- c(crossprod(Model1_fit$residuals))
+MSE_m1 <- RSS_m1 / length(Model1_fit$residuals)
+RMSE_m1 <- sqrt(MSE_m1)
+RMSE_m1
+
+```
+
+The variances from the model seems unequal, check histogram of MonthlyIncome
+
+```{r}
+ggplot(data=case2[!is.na(case2$MonthlyIncome),], aes(x=MonthlyIncome)) +
+        geom_histogram(fill="blue", binwidth = 1000) +
+        scale_x_continuous(breaks= seq(0, 800000, by=100000))
+
+##Need log transform
+
+qqnorm(case2$MonthlyIncome)
+qqline(case2$MonthlyIncome)
+
+#skew(case2$MonthlyIncome)
+```
+
+```{r}
+
+case2_log <- case2
+
+case2_log$MonthlyIncome<- log(case2_log$MonthlyIncome) #default is the natural logarithm, "+1" is not necessary as there are no 0's
+#skew(case2_use_num$MonthlyIncome)
+
+qqnorm(case2_log$MonthlyIncome)
+qqline(case2_log$MonthlyIncome)
+
+ggplot(data=case2_log[!is.na(case2_log$MonthlyIncome),], aes(x=MonthlyIncome)) +
+        geom_histogram(fill="blue", binwidth = 0.2) 
+
+```
+
+```{r}
+set.seed(4)
+TrainObs = sample(seq(1,dim(case2_use_num)[1]),round(.7*dim(case2_use_num)[1]),replace = FALSE)
+regresTrain2 = case2_use_num[TrainObs,]
+regresTest2 = case2_use_num[-TrainObs,]
+Model2_fit = lm(MonthlyIncome~., data = regresTrain2)
+
+summary(Model2_fit)
+confint(Model2_fit)
+```
+
+```{r}
+case2_reg_cat <- case2_use_cat
+case2_reg_cat$MonthlyIncomeLog<- log(case2_reg_cat$MonthlyIncome)
+
+case2_reg_cat$Id <- NULL
+case2_reg_cat$MonthlyIncome <- NULL
+
+set.seed(1000)
+TrainObs = sample(seq(1,dim(case2_reg_cat)[1]),round(.7*dim(case2_reg_cat)[1]),replace = FALSE)
+regresTrain3 = case2_reg_cat[TrainObs,]
+regresTest3 = case2_reg_cat[-TrainObs,]
+Model3_fit = lm(MonthlyIncomeLog~., data = regresTrain3)
+
+#summary(Model3_fit)
+#confint(Model3_fit)
+
+Model3_Preds = predict(Model3_fit, newdata = regresTest3)
+
+#MSPE Calculation
+MSPE = mean((regresTest$MonthlyIncomeLog - Model3_Preds)^2)
+#MSPE
+
+hist(Model3_fit$residuals, col = "blue", main = "Model3: Histogram of Residuals")
+plot(Model3_fit$fitted.values,Model3_fit$residuals, main = "Model3: Plot of Residuals v. Fitted Values")
+
+
+inpred_model3 <- predict(Model3_fit, regresTest3)
+resd_model3 <- exp(regresTest3$MonthlyIncomeLog)-exp(inpred_model3) 
+RSS_mod3 <- c(crossprod(resd_model3))
+MSE_mod3 <- RSS_mod3 / length(resd_model3)
+RMSE_mod3 <- sqrt(MSE_mod3)
+RMSE_mod3
+
+```
+
+
+Let's check some other methologies
+
+```{r}
+set.seed(1000)
+quick_RF <- randomForest(x=regresTrain3[,-31], y=regresTrain3[,31], ntree=100,importance=TRUE)
+varImpPlot(quick_RF)
+imp_RF <- importance(quick_RF)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+
+Model3_RF_Preds <- predict(quick_RF, regresTest3[,-31])
+
+#MSPE Calculation
+MSPE = mean((regresTest3$MonthlyIncomeLog - Model3_RF_Preds)^2)
+MSPE
+
+hist(Model3_fit$residuals, col = "blue", main = "Model3: Histogram of Residuals")
+plot(Model3_fit$fitted.values,Model3_fit$residuals, main = "Model3: Plot of Residuals v. Fitted Values")
+
+pred_rf <- predict(quick_RF,regresTest3[,-31])
+resd_model3_RF <- exp(regresTest3$MonthlyIncomeLog)-exp(pred_rf)
+RSS_mod3_RF <- c(crossprod(resd_model3_RF))
+MSE_mod3_RF <- RSS_mod3_RF / length(resd_model3_RF)
+RMSE_mod3_RF <- sqrt(MSE_mod3_RF)
+RMSE_mod3_RF
+
+```
+
+
+```{r}
+
+case2_reg_cat_sub <- case2_reg_cat %>% select(JobLevel,JobRole,TotalWorkingYears,YearsAtCompany,NumCompaniesWorked,MonthlyIncomeLog)
+
+set.seed(4)
+TrainObs = sample(seq(1,dim(case2_reg_cat)[1]),round(.7*dim(case2_reg_cat)[1]),replace = FALSE)
+regresTrain4 = case2_reg_cat_sub[TrainObs,]
+regresTest4 = case2_reg_cat_sub[-TrainObs,]
+Model4_fit = lm(MonthlyIncomeLog~., data = regresTrain4)
+
+hist(Model4_fit$residuals, col = "blue", main = "Model4: Histogram of Residuals")
+plot(Model4_fit$fitted.values,Model4_fit$residuals, main = "Model4: Plot of Residuals v. Fitted Values")
+
+resd_model4 <- exp(regresTrain4$MonthlyIncomeLog)-exp(Model4_fit$fitted.values)
+RSS_mod4 <- c(crossprod(resd_model4))
+MSE_mod4 <- RSS_mod4 / length(resd_model4)
+RMSE_mod4 <- sqrt(MSE_mod4)
+
+pred_model4 <- predict(Model4_fit, regresTest4)
+resd_model4 <- exp(regresTest4$MonthlyIncomeLog)-exp(pred_model4)
+MSE_mod4 <- RSS_mod4 / length(resd_model4)
+RMSE_mod4 <- sqrt(MSE_mod4)
+RMSE_mod4
+```
+```{r}
+set.seed(1000)
+quick_RF4 <- randomForest(x=regresTrain4[,-6], y=regresTrain4[,6], ntree=100,importance=TRUE)
+
+pred_rf4 <- predict(quick_RF4,regresTest4[,-6])
+resd_model4_RF <- exp(regresTest4$MonthlyIncomeLog)-exp(pred_rf4)
+RSS_mod4_RF <- c(crossprod(resd_model4_RF))
+MSE_mod4_RF <- RSS_mod4_RF / length(resd_model4_RF)
+RMSE_mod4_RF <- sqrt(MSE_mod4_RF)
+RMSE_mod4_RF
+
+```
+
+
+```{r}
+h2o.init()
+
+# Putting the original dataframe into an h2o format
+h2o_df_reg <- as.h2o(case2_reg_cat)
+
+# Splitting into training, validation and testing sets
+split_df_reg <- h2o.splitFrame(h2o_df_reg, c(0.7, 0.29), seed=3)
+
+# Obtaining our three types of sets into three separate values
+h2o_train_reg <- h2o.assign(split_df_reg[[1]], "train")
+h2o_validation_reg <- h2o.assign(split_df_reg[[2]], "validation")
+h2o_test_reg <- h2o.assign(split_df_reg[[2]], "test")
+
+```
+
+```{r}
+#h2o.describe(h2o_train_reg)
+```
+
+```{r}
+# Establish X and Y (Features and Labels)
+y <- "MonthlyIncomeLog"
+x <- setdiff(names(h2o_train_reg), y)
+auto_ml <- h2o.automl(
+    y = y,
+    x = x,
+    training_frame = h2o_train_reg,
+    leaderboard_frame = h2o_validation_reg,
+    project_name = "Salary",
+    max_models = 10,
+    seed = 12
+)
+```
+
+```{r}
+top_models <- auto_ml@leaderboard 
+model_id <- as.data.frame(top_models$model_id)[,1]
+xgb <- h2o.getModel(grep("XRT", model_id, value = TRUE)[1])
+
+# Examine the variable importance of the top XGBoost model
+# XGBoost can show the feature importance as oppose to the stack ensemble
+h2o.varimp(xgb)
+```
+
+```{r}
+h2o.varimp_plot(xgb)
+```
+
+```{r}
+pred_automl <- h2o.predict(auto_ml, h2o_test_reg)
+h2o.make_metrics(exp(pred_automl), exp(h2o_test_reg$MonthlyIncomeLog))
+
+resd_automl_h2o<- as.numeric(pred_automl-h2o_test_reg$MonthlyIncomeLog)
+hist(as.data.frame(resd_automl_h2o)$predict, col = "blue", main = "Model: Histogram of Residuals")
+plot(as.data.frame(pred_automl)$predict,as.data.frame(resd_automl_h2o)$predict, main = "Model AutoML: Plot of Residuals v. Fitted Values")
+
+```
+```{r}
+# Check for the top models
+top_models <- auto_ml@leaderboard
+print(top_models)
+```
+```{r}
+# Get the best model
+# Our aim is to determine the feature importance
+model_id <- as.data.frame(top_models$model_id)[,1]
+best_family <- h2o.getModel(grep("StackedEnsemble_BestOfFamily", model_id, value=TRUE)[1])
+obtain_model <- h2o.getModel(best_family@model$metalearner$name)
+```
+
+```{r}
+# How important is each model to the StackEnsemble
+h2o.varimp(obtain_model)
+```
+
+

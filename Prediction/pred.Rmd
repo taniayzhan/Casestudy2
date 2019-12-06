@@ -1,0 +1,203 @@
+---
+title: 'CaseStudy2: Employee Attrition Study'
+author: "YZ"
+date: "12/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Below, I am reading the csv's as dataframes into R.
+
+```{r}
+case2 <- read_csv("CaseStudy2-data.csv")
+case2_attr <- read_csv("CaseStudy2CompSet No Attrition.csv")
+case2_sala <- read_excel("CaseStudy2CompSet No Salary.xlsx")
+
+# initialize dataframes
+case2 <- data.frame(case2)
+
+case2_attr <- data.frame(case2_attr)
+case2_sala <- data.frame(case2_sala)
+```
+
+
+```{r}
+
+numericandordinal=case2_use %>% dplyr::select(Age,DailyRate,DistanceFromHome,HourlyRate,MonthlyRate,MonthlyIncome,NumCompaniesWorked,PercentSalaryHike,TrainingTimesLastYear,YearsAtCompany,YearsInCurrentRole,YearsSinceLastPromotion,YearsWithCurrManager,TotalWorkingYears,BusinessTravel,OverTime,EnvironmentSatisfaction,Education,JobInvolvement,JobLevel,PerformanceRating,RelationshipSatisfaction,StockOptionLevel)
+
+#scale the data:
+num2=list(names(numericandordinal))
+case2_use_numadd=case2_use[,names(case2_use) %in% num2[[1]]]
+
+case2_use_numadd <- case2_use_numadd %>% mutate(BusinessTravel=factor(BusinessTravel)) %>% mutate(BusinessTravel=fct_recode(BusinessTravel,"1"="Travel_Frequently","2"="Travel_Rarely","3"="Non-Travel"))
+case2_use_numadd <- case2_use_numadd %>% mutate(OverTime=factor(OverTime)) %>% mutate(OverTime=fct_recode(OverTime,"0"="No","1"="Yes"))
+case2_use_numadd <- case2_use_numadd %>% mutate(EnvironmentSatisfaction=factor(EnvironmentSatisfaction)) %>% mutate(EnvironmentSatisfaction=fct_recode(EnvironmentSatisfaction,"1"="Low","2"="Medium","3"="High","4"="Very High"))
+
+cols <- c("Education", "JobInvolvement", "JobLevel","PerformanceRating","RelationshipSatisfaction","StockOptionLevel")
+case2_use_numadd[cols] <- lapply(case2_use_numadd[cols], factor)
+
+str(case2_use_numadd)
+
+```
+
+
+Split the data
+```{r}
+set.seed(1000)
+# Splitting our data
+trainIndex <- createDataPartition(case2_use$Attrition, p=0.7, 
+                                 list=FALSE, times=1)
+
+train_case2 <- case2_use_numadd[trainIndex,]
+valid_case2 <- case2_use_numadd[-trainIndex,]
+
+train_case2_label <- case2_use[trainIndex,]$Attrition
+valid_case2_label <- case2_use[-trainIndex,]$Attrition
+
+head(train_case2)
+head(valid_case2)
+
+
+```
+
+
+```{r}
+# Delete lease important columns
+cols <- c("PerformanceRating","BusinessTravel","YearsSinceLastPromotion","Education","TrainingTimesLastYear")
+
+train_case2[cols] <- NULL
+valid_case2[cols] <- NULL
+
+model = naiveBayes(train_case2,as.factor(train_case2_label), laplace = 0)
+Table_nb <- table(predict(model,valid_case2),valid_case2_label)
+CM_nb = confusionMatrix(Table_nb )
+CM_nb
+
+```
+
+```{r}
+case2_attr_use <- case2_attr
+
+ID <- case2_attr$ID
+# Delete unecessary columns
+cols <- c("Over18", "EmployeeNumber", "EmployeeCount","ID","StandardHours")
+
+case2_attr_use[cols] <- NULL
+
+numericandordinal=case2_attr_use %>% dplyr::select(Age,DailyRate,DistanceFromHome,HourlyRate,MonthlyRate,MonthlyIncome,NumCompaniesWorked,PercentSalaryHike,TrainingTimesLastYear,YearsAtCompany,YearsInCurrentRole,YearsSinceLastPromotion,YearsWithCurrManager,TotalWorkingYears,BusinessTravel,OverTime,EnvironmentSatisfaction,Education,JobInvolvement,JobLevel,PerformanceRating,RelationshipSatisfaction,StockOptionLevel)
+
+#scale the data:
+num2=list(names(numericandordinal))
+case2_attr_numadd=case2_attr_use[,names(case2_attr_use) %in% num2[[1]]]
+
+case2_attr_numadd <- case2_attr_numadd %>% mutate(BusinessTravel=factor(BusinessTravel)) %>% mutate(BusinessTravel=fct_recode(BusinessTravel,"1"="Travel_Frequently","2"="Travel_Rarely","3"="Non-Travel"))
+case2_attr_numadd <- case2_attr_numadd %>% mutate(OverTime=factor(OverTime)) %>% mutate(OverTime=fct_recode(OverTime,"0"="No","1"="Yes"))
+case2_attr_numadd <- case2_attr_numadd %>% mutate(EnvironmentSatisfaction=factor(EnvironmentSatisfaction)) %>% mutate(EnvironmentSatisfaction=fct_recode(EnvironmentSatisfaction,"1"="Low","2"="Medium","3"="High","4"="Very High"))
+
+cols <- c("Education", "JobInvolvement", "JobLevel","PerformanceRating","RelationshipSatisfaction","StockOptionLevel")
+case2_attr_numadd[cols] <- lapply(case2_attr_numadd[cols], factor)
+
+str(case2_attr_numadd)
+
+```
+
+```{r}
+predict(model,case2_attr_numadd)
+write.csv(predict(model,case2_attr_numadd),"C:\\Users\\taniat470s\\Desktop\\pred_attr.csv", row.names = FALSE)
+```
+
+##
+
+```{r}
+case2_reg_cat <- case2_use_cat
+case2_reg_cat$MonthlyIncomeLog<- log(case2_reg_cat$MonthlyIncome)
+
+case2_reg_cat$Id <- NULL
+case2_reg_cat$MonthlyIncome <- NULL
+```
+
+```{r}
+h2o.init()
+
+# Putting the original dataframe into an h2o format
+h2o_df_reg <- as.h2o(case2_reg_cat)
+
+# Splitting into training, validation and testing sets
+split_df_reg <- h2o.splitFrame(h2o_df_reg, c(0.7, 0.29), seed=3)
+
+# Obtaining our three types of sets into three separate values
+h2o_train_reg <- h2o.assign(split_df_reg[[1]], "train")
+h2o_validation_reg <- h2o.assign(split_df_reg[[2]], "validation")
+h2o_test_reg <- h2o.assign(split_df_reg[[2]], "test")
+
+```
+
+```{r}
+h2o.describe(h2o_train_reg)
+```
+
+```{r}
+# Establish X and Y (Features and Labels)
+y <- "MonthlyIncomeLog"
+x <- setdiff(names(h2o_train_reg), y)
+auto_ml <- h2o.automl(
+    y = y,
+    x = x,
+    training_frame = h2o_train_reg,
+    leaderboard_frame = h2o_validation_reg,
+    project_name = "Salary",
+    max_models = 10,
+    seed = 12
+)
+```
+
+```{r}
+pred_automl <- h2o.predict(auto_ml, h2o_test_reg)
+h2o.make_metrics(exp(pred_automl), exp(h2o_test_reg$MonthlyIncomeLog))
+
+resd_automl_h2o<- as.numeric(pred_automl-h2o_test_reg$MonthlyIncomeLog)
+hist(as.data.frame(resd_automl_h2o)$predict, col = "blue", main = "Model: Histogram of Residuals")
+plot(as.data.frame(pred_automl)$predict,as.data.frame(resd_automl_h2o)$predict, main = "Model AutoML: Plot of Residuals v. Fitted Values")
+
+```
+
+```{r}
+case2_sala_use <- case2_sala
+
+ID <- case2_sala$ID
+# Delete unecessary columns
+cols <- c("Over18", "EmployeeNumber", "EmployeeCount","ID","StandardHours")
+
+case2_sala_use[cols] <- NULL
+
+##Convert the category variables to factors in numerical levels
+
+temp <- case2_sala_use %>% mutate(Gender=factor(Gender)) %>% mutate(Gender=fct_recode(Gender,"0"="Male","1"="Female"))
+temp <- temp %>% mutate(BusinessTravel=factor(BusinessTravel)) %>% mutate(BusinessTravel=fct_recode(BusinessTravel,"1"="Travel_Frequently","2"="Travel_Rarely","3"="Non-Travel"))
+temp <- temp %>% mutate(Attrition=factor(Attrition)) %>% mutate(Attrition=fct_recode(Attrition,"0"="No","1"="Yes"))
+temp <- temp %>% mutate(MaritalStatus=factor(MaritalStatus)) %>% mutate(MaritalStatus=fct_recode(MaritalStatus,"0"="Married","1"="Single","2"="Divorced"))
+temp <- temp %>% mutate(OverTime=factor(OverTime)) %>% mutate(OverTime=fct_recode(OverTime,"0"="No","1"="Yes"))
+temp <- temp %>% mutate(Department=factor(Department)) %>% mutate(Department=fct_recode(Department,"0"="Sales","1"="Research & Development","2"="Human Resources"))
+temp <- temp %>% mutate(JobRole=factor(JobRole)) %>% mutate(JobRole=fct_recode(JobRole,"0"="Healthcare Representative","1"="Sales Representative","2"="Research Scientist","3"="Manufacturing Director","4"="Sales Executive","5"="Human Resources","6"="Laboratory Technician","7"="Research Director","8"="Manager"))
+temp <- temp %>% mutate(EducationField=factor(EducationField)) %>% mutate(EducationField=fct_recode(EducationField,"0"="Life Sciences","1"="Medical","2"="Technical Degree","3"="Marketing","4"="Human Resources", "5"="Other"))
+temp <- temp %>% mutate(EnvironmentSatisfaction=factor(EnvironmentSatisfaction)) %>% mutate(EnvironmentSatisfaction=fct_recode(EnvironmentSatisfaction,"1"="Low","2"="Medium","3"="High","4"="Very High"))
+case2_sala_cat<-temp
+
+cols <- c("Education", "JobInvolvement", "JobLevel","PerformanceRating","RelationshipSatisfaction","StockOptionLevel")
+case2_sala_cat[cols] <- lapply(case2_sala_cat[cols], factor)
+
+str(case2_sala_cat)
+
+```
+
+```{r}
+h2o_sala_reg <- as.h2o(case2_sala_cat)
+pred_automl_sala <- h2o.predict(auto_ml, h2o_sala_reg)
+prd_sala <- exp(pred_automl_sala)
+h2o.exportFile(prd_sala, path = "C:\\Users\\taniat470s\\Desktop\\pred_monthlyincome.csv")
+```
+
