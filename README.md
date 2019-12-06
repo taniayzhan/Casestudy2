@@ -27,18 +27,31 @@ The dataset has 36 explanatory variables describing rich information of employee
 ## Conclusions
 
 We use the employee dataset to do an EDA first, then further modeling the attrition using a few different criteria, identifying factors that related to attrition. The top factors related to attrition I identified within this analysis are:
+
 -Age/TotalWorkingYears
+
 -MonthlyIncome/JobRole
+
 -Overtime/DistancefromHome
 
+
+
 The top factors related to monthly incomes I identified within this analysis are:
+
 -Job level
+
 -Job role
+
 -YearsatCompany/TotalWorkingYears
 
+
+
 There are a few learning about the dataset:
+
 -It appears that sales has a higher attrition rate.
+
 -Factors related to work-life balance appear important to attrition.
+
 -No apparent gender differences are found in attrition and monthly incomes.
 
 
